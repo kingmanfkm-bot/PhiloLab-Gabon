@@ -7,34 +7,25 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "philo-gabon-2026")
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 app.last_msg_id = None
 
+# MÉMOIRE PHILOLAB : garde les 5 derniers échanges par élève
+MEMOIRE = {}
+
 SYSTEM_PROMPT = """
-Tu es PhiloLab-Gabon, l'assistant du Maitre Alix kevin MANFOUMBI.
-Tu es connecte a NotebookLM qui est ta base de depart.
+Tu es PhiloLab-Gabon, concue par Maitre Alix kevin MANFOUMBI methode IPN.
+BASE: NotebookLM officielle (grilles IGS, fiche pédagogique, leçon dissertée, correction Sujet 3, progression 2026-2027)
 
-BASE NOTEBOOKLM OFFICIELLE (source prioritaire):
-- Modele de lecon de philosophie, elaboration d'une epreuve PDF IGS
-- Exigences methodologiques du sujet question, fiche pedagogique
-- Grille de notation dissertation sujet question + sujet citation
-- Grille de notation ecrit commentaire de texte philosophique Sujet 3
-- Grille d'evaluation de philosophie
-- Fichier sujet citation, lecon dissertee, methodologie philosophique, point sur les methodologie
-- Progression nationale 2026-2027 Gabon
-- Propositions de lecons: religion, pouvoir
-- Proposition de correction du sujet commentaire + 2 sujets 3 traites
-
-REGLES D'OR MANFOUMBI - OBLIGATOIRES POUR CHAQUE REPONSE:
-1. Toujours commencer par EXACTEMENT: "PhiloLab-Gabon concue par Maitre Alix kevin MANFOUMBI methode IPN"
-2. Si Sujet Question/Citation: Utilise la grille IGS officielle que tu as en base.
-3. Si Sujet 3 Commentaire: Applique ta methode en 4 temps (Theme/These/Probleme - Explication analytique - Discussion - Enjeux) issue de ta correction modele.
-4. Si un prof demande: Genere une FICHE PEDAGOGIQUE complete selon ton modele officiel IPN.
-5. Donne 1 definition courte + 1 exemple CLASSE + 1 exemple GABON (PK12, taxi, Mont-Bouet, foret, delestage).
-6. Finis TOUJOURS par EXACTEMENT: "Tu veux la grille de notation, la fiche complete ou la fiche de revision ? 👉"
-7. Max 150 mots. Objectif: methode MANFOUMBI, 17/20 au BAC.
+REGLES D'OR:
+1. Toujours commencer par: "PhiloLab-Gabon concue par Maitre Alix kevin MANFOUMBI methode IPN"
+2. REGLE MEMOIRE CRITIQUE: Tu as accès à l'historique de la conversation. Si l'utilisateur dit "fiche de révision", "grille", "fiche complète" sans préciser le thème, tu dois REPRENDRE le dernier thème traité dans l'historique. Ne jamais répondre à côté.
+3. Sujet Question/Citation: grille IGS. Sujet 3: méthode 4 temps.
+4. Exemple Gabon obligatoire (PK12, taxi, Mont-Bouët...)
+5. Finis par: "Tu veux la grille de notation, la fiche complete ou la fiche de revision ? 👉"
+6. Max 150 mots. Objectif 17/20.
 """
 
 @app.route('/')
 def home():
-    return 'PhiloLab-Gabon V-FINAL MANFOUMBI IPN OK', 200
+    return 'PhiloLab-Gabon V3 MEMOIRE OK', 200
 
 @app.route('/webhook', methods=['GET'])
 def verify():
@@ -44,13 +35,31 @@ def verify():
 
 def repondre_vite(from_number, text, phone_id, wa_token):
     try:
+        # 1. Récupère l'historique de cet élève
+        hist = MEMOIRE.get(from_number, [])
+        hist_text = "\n".join(hist[-5:]) # les 5 derniers
+
+        prompt_complet = f"""
+        HISTORIQUE DES 5 DERNIERS ECHANGES AVEC CET ELEVE:
+        {hist_text}
+
+        NOUVELLE QUESTION DE L'ELEVE: {text}
+
+        INSTRUCTION: Si la nouvelle question est courte ("fiche de revision", "grille", "et la fiche ?"), c'est une suite logique. Tu dois répondre sur le thème du dernier échange.
+        """
+
         resp = client.models.generate_content(
             model="gemini-flash-lite-latest",
-            contents=[SYSTEM_PROMPT, f"Question eleve: {text}"]
+            contents=[SYSTEM_PROMPT, prompt_complet]
         )
+        reponse = resp.text[:1000]
+
+        # 2. Sauvegarde en mémoire
+        MEMOIRE[from_number] = (hist + [f"Eleve: {text}", f"PhiloLab: {reponse}"])[-10:]
+        
         url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
         headers = {"Authorization": f"Bearer {wa_token}", "Content-Type": "application/json"}
-        payload = {"messaging_product": "whatsapp", "to": from_number, "text": {"body": resp.text[:1000]}}
+        payload = {"messaging_product": "whatsapp", "to": from_number, "text": {"body": reponse}}
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
         print(f"ERREUR: {e}")
