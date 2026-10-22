@@ -124,6 +124,25 @@ def chat():
     question = data.get("question","")
     reponse = bot_reponse(question)
     return jsonify({"reponse": reponse})
+# === WEBHOOK WHATSAPP POUR NUMERO ROBOT 77082886 ===
+import os
+VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "philo-gabon-2026")
 
+@app.route('/webhook', methods=['GET'])
+def verify_webhook():
+    mode = request.args.get('hub.mode')
+    token = request.args.get('hub.verify_token')
+    challenge = request.args.get('hub.challenge')
+    if mode == 'subscribe' and token == VERIFY_TOKEN:
+        return challenge, 200
+    return 'Forbidden', 403
+
+@app.route('/webhook', methods=['POST'])
+def whatsapp_webhook():
+    data = request.get_json()
+    print(f"WEBHOOK RECU: {data}")
+    # TODO: ici tu appelles ta fonction qui répond avec Gemini
+    # pour l'instant on renvoie OK pour que Meta valide
+    return 'OK', 200
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
