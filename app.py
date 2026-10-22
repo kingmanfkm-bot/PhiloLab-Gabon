@@ -141,8 +141,38 @@ def verify_webhook():
 def whatsapp_webhook():
     data = request.get_json()
     print(f"WEBHOOK RECU: {data}")
-    # TODO: ici tu appelles ta fonction qui répond avec Gemini
-    # pour l'instant on renvoie OK pour que Meta valide
+    
+    try:
+        entry = data['entry'][0]['changes'][0]['value']
+        if 'messages' in entry:
+            msg = entry['messages'][0]
+            from_number = msg['from']
+            text = msg['text']['body']
+            print(f"Message de {from_number}: {text}")
+
+            # 1. Appelle Gemini (ta fonction PhiloLab)
+            import google.generativeai as genai
+            genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.generate_content(f"Tu es Kangamukun, prof de philo pour Terminale Gabon. Réponds en 3 lignes max à : {text}")
+            reply_text = response.text
+
+            # 2. Renvoie sur WhatsApp
+            import requests
+            phone_id = os.environ.get("PHONE_NUMBER_ID")
+            token = os.environ.get("WHATSAPP_TOKEN")
+            url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": from_number,
+                "text": {"body": reply_text}
+            }
+            requests.post(url, headers=headers, json=payload)
+            
+    except Exception as e:
+        print(f"Erreur webhook: {e}")
+
     return 'OK', 200
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
